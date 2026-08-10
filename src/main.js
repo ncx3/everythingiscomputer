@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -80,6 +81,31 @@ scene.add(rim);
 scene.add(new THREE.AmbientLight(0x223344, 0.6));
 scene.add(makeBackdrop());
 
+/**
+ * The screen is a light source, not just a bright surface. A rect-area emitter
+ * matched to the glass throws phosphor green onto the bezel's inner chamfer and
+ * the camera arm — which is what actually sells the thing as switched on.
+ */
+RectAreaLightUniformsLib.init();
+// `spread` oversizes the emitter relative to the glass. A light exactly the
+// size of the aperture concentrates on the chamfer right around it; a larger,
+// dimmer one falls off gently and reaches the whole chassis instead.
+const SPILL = { intensity: 0.5, spread: 1.9 };
+
+const screenLight = new THREE.RectAreaLight(0x5cffae, SPILL.intensity, 1, 1);
+screenLight.visible = false; // until the glass is measured
+scene.add(screenLight);
+
+function updateScreenLight() {
+  if (!glass) return;
+  screenLight.width = glass.width * SPILL.spread;
+  screenLight.height = glass.height * SPILL.spread;
+  screenLight.intensity = SPILL.intensity;
+  screenLight.position.copy(glass.center).addScaledVector(screenNormal, 0.02);
+  screenLight.lookAt(glass.center.clone().addScaledVector(screenNormal, 1));
+  screenLight.visible = true;
+}
+
 // ── state ───────────────────────────────────────────────────────────────
 const timer = new THREE.Timer();
 const screenMock = createScreenMock();
@@ -126,6 +152,7 @@ new GLTFLoader().load(
     if (screenMesh) {
       screenNormal = averageWorldNormal(screenMesh);
       glass = mapScreen(screenMesh, screenNormal, SCREEN_INSET);
+      updateScreenLight();
       screenMesh.material = new THREE.MeshStandardMaterial({
         color: 0x000000,
         emissive: 0xffffff,
@@ -160,9 +187,9 @@ const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.42, // strength — the chassis buttons blow out fast, keep this low
-  0.5,
-  0.82
+  0.24, // strength — the chassis buttons blow out fast, keep this low
+  0.85, // radius — wide, so the halo carries across the frame instead of hugging edges
+  0.70 // low enough that the phosphor text blooms, high enough to spare the bezel
 );
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
@@ -389,6 +416,20 @@ function updateDomRect() {
   domRect.style.borderRadius = `${r.w * screenRadius}px`;
 }
 
+// ── picking the screen ──────────────────────────────────────────────────
+// The UI lives on curved glass, so a click is a raycast: hit the screen mesh,
+// take the interpolated UV, and ask the screen what is under that point.
+const raycaster = new THREE.Raycaster();
+const _ndc = new THREE.Vector2();
+
+function pickScreen(clientX, clientY) {
+  if (!screenMesh || framing !== 'docked') return null;
+  _ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+  raycaster.setFromCamera(_ndc, camera);
+  const hit = raycaster.intersectObject(screenMesh, false)[0];
+  return hit?.uv ? screenMock.hitTest(hit.uv.x, hit.uv.y) : null;
+}
+
 // ── input ───────────────────────────────────────────────────────────────
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -404,15 +445,26 @@ addEventListener('pointerdown', (e) => {
 addEventListener('pointerup', (e) => {
   const wasDragging = pointer.dragging;
   pointer.dragging = false;
-  if (!wasDragging) return;
-  // A click, not a drag — and we're still outside. Go in.
-  if (pointer.moved < 6 && framing !== 'docked') setFraming('docked');
+  if (!wasDragging || pointer.moved >= 6) return;
+  if (framing !== 'docked') {
+    setFraming('docked'); // a click, not a drag — and we're still outside
+    return;
+  }
+  const hit = pickScreen(e.clientX, e.clientY);
+  if (hit) screenMock.open(hit);
 });
 addEventListener('pointercancel', () => (pointer.dragging = false));
 
 addEventListener('pointermove', (e) => {
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointer.y = (e.clientY / window.innerHeight) * 2 - 1;
+
+  if (!pointer.dragging) {
+    const hit = pickScreen(e.clientX, e.clientY);
+    screenMock.setHover(hit);
+    document.body.classList.toggle('over-ui', !!hit);
+  }
+
   if (!pointer.dragging) return;
   pointer.moved += Math.abs(e.clientX - pointer.lastX) + Math.abs(e.clientY - pointer.lastY);
   look.yawTo = clamp(look.yawTo + (e.clientX - pointer.lastX) * 0.0022, -0.32, 0.32);
@@ -434,6 +486,11 @@ addEventListener('keydown', (e) => {
   if (k === 'd') toggle('dom');
   if (k === 'b') toggle('bloom');
   if (k === 'r') toggle('drift');
+  // browse the mock's content
+  if (e.key === '[') screenMock.cycle(-1);
+  if (e.key === ']') screenMock.cycle(1);
+  if (e.key === 'ArrowUp') screenMock.cycleRecord(-1);
+  if (e.key === 'ArrowDown') screenMock.cycleRecord(1);
 });
 
 document.getElementById('hud').addEventListener('click', (e) => {
@@ -514,6 +571,7 @@ tick();
 function remap() {
   if (!screenMesh) return;
   glass = mapScreen(screenMesh, screenNormal, SCREEN_INSET);
+  updateScreenLight();
   setFraming(framing, true);
 }
 
@@ -541,6 +599,7 @@ window.GENO = {
     camera.updateMatrixWorld(true);
 
     screenMesh.material = new THREE.MeshBasicMaterial({ color: 0xff00ff, toneMapped: false });
+    screenLight.visible = false; // green spill would contaminate the magenta test
 
     const w = 1400;
     const h = Math.max(2, Math.round(w / camera.aspect));
@@ -604,6 +663,7 @@ window.GENO = {
     screenMesh.material = saved.mat;
     Object.assign(SCREEN_INSET, saved.inset);
     glass = mapScreen(screenMesh, screenNormal, SCREEN_INSET);
+    updateScreenLight();
     setFraming(saved.framing, true);
     screenMock.setMode(saved.mode);
 
@@ -642,6 +702,33 @@ window.GENO = {
     if (threshold !== undefined) bloom.threshold = threshold;
     return { strength: bloom.strength, radius: bloom.radius, threshold: bloom.threshold };
   },
+
+  /**
+   * Everything that makes the screen read as emitting light, in one place.
+   *   GENO.glow({ spill: 4 })          brighter light thrown on the bezel
+   *   GENO.glow({ haloAlpha: 0.32 })   wider halo around the glyphs
+   *   GENO.glow({ emissive: 1.8 })     brighter glass overall
+   */
+  glow(next = {}) {
+    if (next.spill !== undefined) SPILL.intensity = next.spill;
+    if (next.spread !== undefined) SPILL.spread = next.spread;
+    if (next.spill !== undefined || next.spread !== undefined) updateScreenLight();
+    if (next.emissive !== undefined && screenMesh) screenMesh.material.emissiveIntensity = next.emissive;
+    const g = screenMock.setGlow(next);
+    return {
+      spill: SPILL.intensity,
+      spread: SPILL.spread,
+      emissive: screenMesh?.material.emissiveIntensity,
+      ...g,
+      bloom: { strength: bloom.strength, radius: bloom.radius, threshold: bloom.threshold },
+    };
+  },
+
+  /** GENO.open('brief') or GENO.open('ML-3032') */
+  open: (id) => screenMock.open(id),
+
+  /** What is clickable at these viewport coords, if anything. */
+  pick: (x, y) => pickScreen(x, y),
 
   /** True once the camera has settled — used by the screenshot harness. */
   settled: () => rig.t >= 1 && Math.abs(look.yaw) < 0.001 && Math.abs(look.pitch) < 0.001,

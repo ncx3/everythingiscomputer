@@ -12,6 +12,25 @@
  */
 
 import * as THREE from 'three';
+import { PERSONNEL, BRIEF, SURVEILLANCE, COMMS, SECTIONS } from './content.js';
+
+/** Greedy word wrap onto a character grid. */
+function wrap(str, width) {
+  const lines = [];
+  let line = '';
+  for (let word of String(str).split(/\s+/).filter(Boolean)) {
+    while (word.length > width) {
+      if (line) { lines.push(line); line = ''; }
+      lines.push(word.slice(0, width));
+      word = word.slice(width);
+    }
+    if (!line) line = word;
+    else if (line.length + 1 + word.length <= width) line += ' ' + word;
+    else { lines.push(line); line = word; }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
 
 const W = 2560;
 const H = 1684; // 1.5202 — matches the screen mesh's real aspect
@@ -74,6 +93,34 @@ export function createScreenMock() {
   let radius = 0.055;
   let marginX = 0.018;
   let marginY = 0.028;
+
+  /** Phosphor emission around the glyphs. Tune live with GENO.glow(). */
+  const glow = { core: 4, coreAlpha: 0.5, halo: 19, haloAlpha: 0.2 };
+
+  let section = 'personnel';
+  let selected = PERSONNEL[0]?.code;
+  let hover = null;
+
+  /**
+   * Clickable areas, in character cells, rebuilt on every compose. main.js
+   * raycasts the glass, converts the hit to UV, and asks hitTest() what's there.
+   */
+  let regions = [];
+  const region = (x, y, w, h, id) => regions.push({ x, y, w, h, id });
+
+  /** Portraits load lazily; a repaint is forced once each one arrives. */
+  const images = new Map();
+  function image(url) {
+    if (!url) return null;
+    let img = images.get(url);
+    if (!img) {
+      img = new Image();
+      img.onload = () => { last = -1; };
+      img.src = url;
+      images.set(url, img);
+    }
+    return img.complete && img.naturalWidth ? img : null;
+  }
 
   // ---- grid primitives -------------------------------------------------
   const idx = (x, y) => y * COLS + x;
@@ -178,72 +225,217 @@ export function createScreenMock() {
   }
 
   // ---- the OS ----------------------------------------------------------
+  const RX = DIVIDER + 2; // left column of the content pane
+  const RW = COLS - RX - 2; // its width in characters
+
+  function highlightRow(y, from, to, alpha = 0.12) {
+    for (let x = from; x < to; x++) bg[idx(x, y)] = `rgba(92,255,174,${alpha})`;
+  }
+
+  /** Mark a row clickable, and light it up when the cursor is over it. */
+  function row(y, from, to, id, active) {
+    region(from, y, to - from, 1, id);
+    if (active) highlightRow(y, from, to, 0.12);
+    else if (hover === id) highlightRow(y, from, to, 0.07);
+  }
+
+  function drawTree() {
+    let y = 2;
+    text(2, y++, '/', C.dim);
+    y++;
+    SECTIONS.forEach((s, i) => {
+      const last = i === SECTIONS.length - 1;
+      const open = s.id === section;
+      const expandable = s.id === 'personnel';
+      const arm = last && !(open && expandable) ? '└' : '├';
+      text(2, y, `${arm}─${open ? '▾' : '▸'} ${s.label}`, open ? C.bright : C.text);
+      if (s.count !== null) text(24, y, `[${s.count}]`, C.dim);
+      row(y, 1, DIVIDER, s.id, open);
+      y++;
+
+      if (open && expandable) {
+        PERSONNEL.forEach((p, j) => {
+          const tail = j === PERSONNEL.length - 1;
+          text(2, y, last ? '   ' : '│  ', C.chrome);
+          text(5, y, `${tail ? '└' : '├'}─ ${p.code}`, p.code === selected ? C.amber : C.dim);
+          row(y, 1, DIVIDER, p.code, p.code === selected);
+          y++;
+        });
+      }
+    });
+
+    text(2, ROWS - 8, '── LINK ────────────────', C.chrome);
+    text(2, ROWS - 7, 'UPLINK ......... STABLE', C.dim);
+    text(2, ROWS - 6, 'AUTH ............ GUEST', C.dim);
+    text(2, ROWS - 5, 'CLEARANCE ..... LIMITED', C.alert);
+  }
+
+  function drawBrief() {
+    let y = 5;
+    for (const para of BRIEF) {
+      for (const line of wrap(para, RW)) {
+        if (y > ROWS - 7) return;
+        text(RX, y++, line, C.text);
+      }
+      y++;
+    }
+  }
+
+  const PORTRAIT_W = 17; // columns
+  const PORTRAIT_H = 9; // rows — ~square once cell aspect is accounted for
+
+  function drawPersonnel() {
+    let y = 5;
+    for (const p of PERSONNEL) {
+      const on = p.code === selected;
+      text(RX, y, on ? '▸' : ' ', C.amber);
+      text(RX + 2, y, p.code, on ? C.amber : C.dim);
+      text(RX + 12, y, p.name.toUpperCase(), on ? C.bright : C.text);
+      row(y, RX - 1, COLS - 2, p.code, on);
+      y++;
+    }
+
+    y++;
+    hline(RX, y++, RW, '─', C.chrome);
+
+    const p = PERSONNEL.find((x) => x.code === selected) || PERSONNEL[0];
+
+    // Photo on the left, the description set beside it — the way a personnel
+    // file is laid out.
+    const tx = RX + PORTRAIT_W + 2;
+    const textW = COLS - 2 - tx;
+    portrait = { p, x: RX, y };
+
+    text(tx, y, `${p.code} / ${p.name.toUpperCase()}`, C.bright);
+    y++;
+    if (p.alias) {
+      text(tx, y, 'ALIAS ... ', C.chrome);
+      text(tx + 10, y++, p.alias.toUpperCase(), C.dim);
+    }
+    text(tx, y, 'CLASS ... ', C.chrome);
+    text(tx + 10, y++, p.role, C.dim);
+    y++;
+    for (const line of wrap(p.bio, textW)) {
+      if (y > ROWS - 7) break;
+      text(tx, y++, line, C.text);
+    }
+  }
+
+  /**
+   * Portraits are drawn on the text layer so they pick up the same phosphor
+   * bloom as the glyphs, then knocked to a green duotone — an image pulled off
+   * an archive terminal, not a press shot.
+   */
+  function paintPortrait(x, spec) {
+    const { p } = spec;
+    const gx = spec.x * CELL_W;
+    const gy = spec.y * CELL_H;
+    const gw = PORTRAIT_W * CELL_W;
+    const gh = PORTRAIT_H * CELL_H;
+
+    const img = image(p.portrait);
+    x.save();
+    x.beginPath();
+    x.rect(gx, gy, gw, gh);
+    x.clip();
+
+    if (img) {
+      // Held deliberately low: the source photographs vary a lot in exposure,
+      // and a light background turns into a wall of green if it is pushed.
+      x.filter = 'grayscale(1) contrast(1.25) brightness(1.02)';
+      const s = Math.max(gw / img.naturalWidth, gh / img.naturalHeight);
+      const w = img.naturalWidth * s;
+      const h = img.naturalHeight * s;
+      x.drawImage(img, gx + (gw - w) / 2, gy + (gh - h) / 2, w, h);
+      x.filter = 'none';
+      x.globalCompositeOperation = 'multiply';
+      x.fillStyle = C.text;
+      x.fillRect(gx, gy, gw, gh);
+      x.globalCompositeOperation = 'source-over';
+      // interlace the portrait so it reads as a scanned frame
+      x.fillStyle = 'rgba(0,0,0,.30)';
+      for (let k = 0; k < gh; k += 6) x.fillRect(gx, gy + k, gw, 3);
+    } else {
+      x.fillStyle = 'rgba(92,255,174,.05)';
+      x.fillRect(gx, gy, gw, gh);
+    }
+    x.restore();
+
+    // corner brackets
+    x.strokeStyle = C.dim;
+    x.lineWidth = 3;
+    const b = CELL_W * 1.1;
+    for (const [cx, cy, sx, sy] of [
+      [gx, gy, 1, 1],
+      [gx + gw, gy, -1, 1],
+      [gx, gy + gh, 1, -1],
+      [gx + gw, gy + gh, -1, -1],
+    ]) {
+      x.beginPath();
+      x.moveTo(cx + sx * b, cy);
+      x.lineTo(cx, cy);
+      x.lineTo(cx, cy + sy * b);
+      x.stroke();
+    }
+  }
+
+  function drawSurveillance() {
+    let y = 5;
+    for (const s of SURVEILLANCE) {
+      text(RX, y, `▸ ${s.label}`, C.amber);
+      text(RX + 24, y++, s.status, C.alert);
+    }
+    y++;
+    text(RX, y, '┌' + '─'.repeat(RW - 2) + '┐', C.chrome);
+    for (let k = 0; k < 7; k++) text(RX, y + 1 + k, '│' + ' '.repeat(RW - 2) + '│', C.chrome);
+    text(RX, y + 8, '└' + '─'.repeat(RW - 2) + '┘', C.chrome);
+    text(RX + Math.floor((RW - 13) / 2), y + 4, '[ NO SIGNAL ]', C.redact);
+  }
+
+  function drawComms() {
+    let y = 5;
+    for (const c of COMMS) {
+      text(RX, y, `▸ ${c.label}`, C.amber);
+      text(RX + 16, y, '.'.repeat(14), C.chrome);
+      text(RX + 32, y++, c.value, C.redact);
+      y++;
+    }
+  }
+
+  let portrait = null;
+
   function composeOS(t) {
     clear();
+    regions = [];
+    portrait = null;
     frameChrome(true);
 
     const clock = new Date().toTimeString().slice(0, 8);
     const right = ` SYS.NOMINAL ── ${clock} `;
     text(COLS - 2 - right.length, 0, right, C.text);
 
-    let y = 2;
-    text(2, y++, '/', C.dim);
-    y++;
-    text(2, y, '├─▸ BRIEF', C.text);
-    y++;
-    text(2, y, '├─▾ PERSONNEL', C.bright);
-    text(24, y, '[3]', C.dim);
-    for (let x = 1; x < DIVIDER; x++) bg[idx(x, y)] = 'rgba(92,255,174,.12)';
-    y++;
-    const crew = ['├─ 01 ████████', '├─ 02 ██████████', '└─ 03 ███████'];
-    for (const line of crew) {
-      text(2, y, '│  ', C.chrome);
-      text(5, y, line.slice(0, 6), C.dim);
-      text(11, y, line.slice(6), C.redact);
-      y++;
-    }
-    text(2, y, '├─▸ SURVEILLANCE_LOG', C.text);
-    text(24, y, '[1]', C.dim);
-    y++;
-    text(2, y, '└─▸ COMMS', C.text);
-    text(24, y, '[4]', C.dim);
+    drawTree();
 
-    text(2, ROWS - 8, '── LINK ────────────────', C.chrome);
-    text(2, ROWS - 7, 'UPLINK ......... STABLE', C.dim);
-    text(2, ROWS - 6, 'AUTH ............ GUEST', C.dim);
-    text(2, ROWS - 5, 'CLEARANCE ..... LIMITED', C.alert);
+    const s = SECTIONS.find((x) => x.id === section) || SECTIONS[0];
+    text(RX, 2, `/${s.label}`, C.bright);
+    hline(RX, 3, RW, '─', C.chrome);
 
-    const RX = DIVIDER + 2;
-    text(RX, 2, '/PERSONNEL', C.bright);
-    hline(RX, 3, COLS - RX - 2, '─', C.chrome);
+    if (section === 'brief') drawBrief();
+    else if (section === 'personnel') drawPersonnel();
+    else if (section === 'surveillance') drawSurveillance();
+    else drawComms();
 
-    const records = [
-      ['01', '████████', '███████████'],
-      ['02', '██████████', '█████████'],
-      ['03', '███████', '████████████'],
-    ];
-
-    let ry = 5;
-    for (const [n, name, role] of records) {
-      text(RX, ry, `▸ ${n}`, C.amber);
-      text(RX + 6, ry, name, C.redact);
-      ry++;
-      text(RX + 6, ry, 'ROLE ............. ', C.chrome);
-      text(RX + 25, ry, role, C.redact);
-      ry++;
-      text(RX + 6, ry, 'CLEARANCE ........ ', C.chrome);
-      text(RX + 25, ry, 'AAA', C.dim);
-      ry += 2;
-    }
-
-    text(RX, ROWS - 6, '3 RECORDS ── END OF DIRECTORY', C.chrome);
+    const footer =
+      s.count !== null ? `${s.count} RECORD${s.count === 1 ? '' : 'S'} ── END OF DIRECTORY` : 'END OF FILE';
+    text(RX, ROWS - 6, footer, C.chrome);
     text(COLS - 22, ROWS - 6, ' GENOCYBER INTERNAL ', C.alert);
 
+    const cmd = `open /${s.label.toLowerCase()}`;
     text(2, ROWS - 2, '>', C.text);
-    text(4, ROWS - 2, 'open /personnel', C.bright);
-    if (Math.floor(t * 1.6) % 2 === 0) text(20, ROWS - 2, '█', C.text);
+    text(4, ROWS - 2, cmd, C.bright);
+    if (Math.floor(t * 1.6) % 2 === 0) text(5 + cmd.length, ROWS - 2, '█', C.text);
 
-    paint(t);
+    paint(t, portrait ? (x) => paintPortrait(x, portrait) : undefined);
   }
 
   // ---- paint -----------------------------------------------------------
@@ -302,10 +494,15 @@ export function createScreenMock() {
     const dw = W - mx * 2;
     const dh = H - my * 2;
 
-    // phosphor bloom: one blurred copy under the crisp text
+    // Phosphor emission, in two passes under the crisp glyphs: a tight core
+    // that thickens the strokes, and a wide low halo that reads as light
+    // actually coming off the tube rather than a blur effect.
     ctx.globalCompositeOperation = 'lighter';
-    ctx.filter = 'blur(7px)';
-    ctx.globalAlpha = 0.55;
+    ctx.filter = `blur(${glow.halo}px)`;
+    ctx.globalAlpha = glow.haloAlpha;
+    ctx.drawImage(textCanvas, 0, 0, W, H, mx, my, dw, dh);
+    ctx.filter = `blur(${glow.core}px)`;
+    ctx.globalAlpha = glow.coreAlpha;
     ctx.drawImage(textCanvas, 0, 0, W, H, mx, my, dw, dh);
     ctx.filter = 'none';
     ctx.globalAlpha = 1;
@@ -352,6 +549,59 @@ export function createScreenMock() {
       if (m === mode) return;
       mode = m;
       last = -1; // force an immediate repaint
+    },
+    get section() {
+      return section;
+    },
+    /** Open a section, or select a personnel record by its code. */
+    open(id) {
+      const rec = PERSONNEL.find((p) => p.code === id);
+      if (rec) {
+        section = 'personnel';
+        selected = rec.code;
+      } else if (SECTIONS.some((s) => s.id === id)) {
+        section = id;
+      } else return { section, selected };
+      last = -1;
+      return { section, selected };
+    },
+    /**
+     * A UV coordinate on the glass -> whatever is clickable under it.
+     * Undoes the safe-margin transform the UI is drawn through.
+     */
+    hitTest(u, v) {
+      if (mode !== 'os') return null;
+      const gx = (COLS * (u - marginX)) / (1 - 2 * marginX);
+      const gy = (ROWS * (1 - v - marginY)) / (1 - 2 * marginY);
+      for (const r of regions) {
+        if (gx >= r.x && gx < r.x + r.w && gy >= r.y && gy < r.y + r.h) return r.id;
+      }
+      return null;
+    },
+    setHover(id) {
+      if (id === hover) return false;
+      hover = id;
+      last = -1;
+      return true;
+    },
+    cycle(dir) {
+      const i = SECTIONS.findIndex((s) => s.id === section);
+      section = SECTIONS[(i + dir + SECTIONS.length) % SECTIONS.length].id;
+      last = -1;
+      return section;
+    },
+    cycleRecord(dir) {
+      const i = PERSONNEL.findIndex((p) => p.code === selected);
+      selected = PERSONNEL[(i + dir + PERSONNEL.length) % PERSONNEL.length].code;
+      section = 'personnel';
+      last = -1;
+      return selected;
+    },
+    /** How much light the glyphs give off. GENO.glow({ haloAlpha: .3 }) */
+    setGlow(next) {
+      if (next) Object.assign(glow, next);
+      last = -1;
+      return { ...glow };
     },
     /** Corner radius and safe margins, as fractions of the canvas. */
     setShape(r, mX, mY) {

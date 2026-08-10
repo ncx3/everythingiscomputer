@@ -21,6 +21,8 @@ html, body {
 
 /* Outside the machine, the whole viewport is the way in. */
 body.landing #stage { cursor: pointer; }
+/* Inside it, only what's actually clickable on the glass. */
+body.over-ui #stage { cursor: pointer; }
 
 #gl { display: block; width: 100%; height: 100%; }
 
