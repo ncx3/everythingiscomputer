@@ -136,7 +136,7 @@ const pointer = { x: 0, y: 0, dragging: false, lastX: 0, lastY: 0, downX: 0, dow
 
 // ── load ────────────────────────────────────────────────────────────────
 new GLTFLoader().load(
-  '/models/deck.glb',
+  import.meta.env.BASE_URL + 'models/deck.glb',
   (gltf) => {
     deck = gltf.scene;
     scene.add(deck);

@@ -14,6 +14,8 @@
  * carrying no ordering information. FNV-1a, then folded into a shape that
  * reads like a corporate record number.
  */
+const BASE = import.meta.env.BASE_URL;
+
 function codeFor(name) {
   let h = 2166136261;
   for (let i = 0; i < name.length; i++) {
@@ -30,6 +32,18 @@ function codeFor(name) {
 
 const CREW = [
   {
+    name: 'Edoardo Bracchi',
+    role: 'ARCHITECTURE / LEVEL DESIGN',
+    bio:
+      'Edoardo Bracchi is an architect and level designer working across spatial design, ' +
+      'gaming, and virtual media. Alongside his active collaborations with architecture ' +
+      'and landscape design practices, he develops interactive environments and video game ' +
+      'spaces. His research centers on spatial storytelling and worldbuilding, exploring ' +
+      'the translation of physical architecture and landscape systems into interactive ' +
+      'digital worlds.',
+    portrait: BASE + 'portraits/edoardo-bracchi.webp',
+  },
+  {
     name: 'Federico Zurani',
     role: 'GAME DESIGN / CREATIVE TECHNOLOGY',
     bio:
@@ -38,7 +52,7 @@ const CREW = [
       'ranging from exhibition contexts to videogames. His research focuses on the ' +
       'epistemological shift inside open-source investigations, tracing how scientific ' +
       'modelling practices emerge from the use of 3D software and game engines.',
-    portrait: '/portraits/federico-zurani.webp',
+    portrait: BASE + 'portraits/federico-zurani.webp',
   },
   {
     name: 'Laura Cugusi',
@@ -48,7 +62,7 @@ const CREW = [
       'across languages and media. Her research focuses on mapping media ecologies, tech ' +
       'literacies, governance infrastructures and world-building strategies that shape the ' +
       'imagination (or lack thereof) about the future.',
-    portrait: '/portraits/laura-cugusi.webp',
+    portrait: BASE + 'portraits/laura-cugusi.webp',
   },
   {
     name: 'machine yearning',
@@ -58,7 +72,7 @@ const CREW = [
       'machine yearning aka Nada Zanhour works across sound, video, 3D and interactive ' +
       'media. Her research focuses on online aesthetics, internet hyper-niches, meme ' +
       'culture and digital militarism.',
-    portrait: '/portraits/machine-yearning.webp',
+    portrait: BASE + 'portraits/machine-yearning.webp',
   },
 ];
 

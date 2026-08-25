@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*:Zone.Identifier
+.DS_Store
+sci_fi_tv_with_camera_alternative_90s.glb

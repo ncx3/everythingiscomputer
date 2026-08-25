@@ -18,6 +18,7 @@ const OUT = 'public/portraits';
 const SIZE = 640;
 
 const SLUGS = {
+  'edoardo bracchi': 'edoardo-bracchi',
   'federico zurani': 'federico-zurani',
   'laura cugusi': 'laura-cugusi',
   'machine yearning': 'machine-yearning',
