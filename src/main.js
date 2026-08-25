@@ -130,9 +130,11 @@ const look = { yaw: 0, pitch: 0, yawTo: 0, pitchTo: 0, zoom: 1 };
 const pointer = { x: 0, y: 0, dragging: false, lastX: 0, lastY: 0, downX: 0, downY: 0, moved: 0 };
 
 // ── load ────────────────────────────────────────────────────────────────
+const tStart = performance.now();
 new GLTFLoader().load(
   import.meta.env.BASE_URL + 'models/deck.glb',
   (gltf) => {
+    const tDownloaded = performance.now();
     deck = gltf.scene;
     scene.add(deck);
     deck.updateWorldMatrix(true, true);
@@ -163,13 +165,24 @@ new GLTFLoader().load(
     // Land on COVER: the deck is roughly square and viewports are widescreen,
     // so containing it leaves black bars down both sides. Covering fills the
     // viewport and only crops the speaker pod and the top of the camera arm.
-    setFraming('docked', true);
+    setFraming('cover', true);
+
+    const tReady = performance.now();
+    console.info(
+      `[genocyber] deck ready in ${((tReady - tStart) / 1000).toFixed(1)}s — ` +
+        `download ${((tDownloaded - tStart) / 1000).toFixed(1)}s, ` +
+        `scene setup ${((tReady - tDownloaded) / 1000).toFixed(1)}s`
+    );
 
     loadingEl.classList.add('done');
     setTimeout(() => loadingEl.remove(), 700);
   },
   (e) => {
-    if (e.lengthComputable) pctEl.textContent = `${Math.round((e.loaded / e.total) * 100)}%`;
+    if (!e.lengthComputable) return;
+    // The host serves the model gzipped, so e.total is the *compressed* length
+    // while e.loaded counts decompressed bytes — the raw ratio overshoots 100%
+    // (138% on GitHub Pages). Clamp rather than trust the denominator.
+    pctEl.textContent = `${Math.min(100, Math.round((e.loaded / e.total) * 100))}%`;
   },
   (err) => {
     pctEl.textContent = 'FAILED';
@@ -458,7 +471,11 @@ addEventListener('wheel', (e) => {
 }, { passive: true });
 
 addEventListener('keydown', (e) => {
-  const k = e.key.toLowerCase();
+  // The landing card says CLICK TO ENTER, but a keyboard user needs a way in.
+  if (framing !== 'docked') {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFraming('docked'); }
+    return;
+  }
   // browse the content
   if (e.key === '[') screenMock.cycle(-1);
   if (e.key === ']') screenMock.cycle(1);

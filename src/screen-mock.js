@@ -97,7 +97,7 @@ export function createScreenMock() {
   /** Phosphor emission around the glyphs. Tune live with GENO.glow(). */
   const glow = { core: 4, coreAlpha: 0.5, halo: 19, haloAlpha: 0.2 };
 
-  let section = 'personnel';
+  let section = 'brief';
   let selected = PERSONNEL[0]?.code;
   let hover = null;
 
