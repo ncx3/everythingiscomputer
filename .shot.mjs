@@ -14,7 +14,6 @@ await settle();
 const c = await page.evaluate(() => window.GENO.calibrate()); await settle();
 await page.evaluate(c => { window.GENO.inset({l:c.l,r:c.r,t:c.t,b:c.b}); const m=c.radius*0.3; window.GENO.shape(c.radius,m,m*1.52); }, c);
 await settle();
-await page.evaluate(() => document.querySelector('#hud [data-state="docked"]').click()); await settle();
 for (const [code,tag] of [['ML-3032','fz'],['TT-0702','my'],['VL-2620','lc']]) {
   await page.evaluate(x => window.GENO.open(x), code);
   await page.waitForTimeout(1500);

@@ -45,8 +45,6 @@ const FRAMINGS = {
 const canvas = document.getElementById('gl');
 const loadingEl = document.getElementById('loading');
 const pctEl = document.getElementById('pct');
-const domLayer = document.getElementById('domlayer');
-const domRect = document.getElementById('domrect');
 
 // ── renderer ────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -117,9 +115,6 @@ let glass = null; // { corners[4], center, width, height } of the VISIBLE apertu
 const modelBox = new THREE.Box3();
 
 let framing = 'contain';
-let bloomOn = true;
-let driftOn = false;
-let domOn = false;
 let modeTimer = 0;
 
 const rig = {
@@ -168,7 +163,7 @@ new GLTFLoader().load(
     // Land on COVER: the deck is roughly square and viewports are widescreen,
     // so containing it leaves black bars down both sides. Covering fills the
     // viewport and only crops the speaker pod and the top of the camera arm.
-    setFraming('cover', true);
+    setFraming('docked', true);
 
     loadingEl.classList.add('done');
     setTimeout(() => loadingEl.remove(), 700);
@@ -246,10 +241,6 @@ function setFraming(name, instant = false) {
   }
 
   document.body.classList.toggle('landing', name !== 'docked');
-
-  for (const b of document.querySelectorAll('#hud [data-state]')) {
-    b.classList.toggle('on', b.dataset.state === name);
-  }
 }
 
 function fitDistance(size, cam, mode, pad) {
@@ -406,16 +397,6 @@ function projectQuad(corners, w, h, yUp) {
   return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
 }
 
-function updateDomRect() {
-  if (!domOn || !glass) return;
-  const r = projectQuad(glass.corners, window.innerWidth, window.innerHeight, false);
-  domRect.style.left = `${r.minX}px`;
-  domRect.style.top = `${r.minY}px`;
-  domRect.style.width = `${r.w}px`;
-  domRect.style.height = `${r.h}px`;
-  domRect.style.borderRadius = `${r.w * screenRadius}px`;
-}
-
 // ── picking the screen ──────────────────────────────────────────────────
 // The UI lives on curved glass, so a click is a raycast: hit the screen mesh,
 // take the interpolated UV, and ask the screen what is under that point.
@@ -435,7 +416,6 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 addEventListener('pointerdown', (e) => {
-  if (e.target instanceof Element && e.target.closest('#hud')) return;
   pointer.dragging = true;
   pointer.lastX = pointer.downX = e.clientX;
   pointer.lastY = pointer.downY = e.clientY;
@@ -479,34 +459,12 @@ addEventListener('wheel', (e) => {
 
 addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
-  if (k === '1') setFraming('contain');
-  if (k === '2') setFraming('cover');
-  if (k === '3' || k === 'enter') setFraming('docked');
-  if (k === 'escape') setFraming('contain');
-  if (k === 'd') toggle('dom');
-  if (k === 'b') toggle('bloom');
-  if (k === 'r') toggle('drift');
-  // browse the mock's content
+  // browse the content
   if (e.key === '[') screenMock.cycle(-1);
   if (e.key === ']') screenMock.cycle(1);
   if (e.key === 'ArrowUp') screenMock.cycleRecord(-1);
   if (e.key === 'ArrowDown') screenMock.cycleRecord(1);
 });
-
-document.getElementById('hud').addEventListener('click', (e) => {
-  const btn = e.target.closest('button');
-  if (!btn) return;
-  if (btn.dataset.state) setFraming(btn.dataset.state);
-  if (btn.dataset.toggle) toggle(btn.dataset.toggle);
-});
-
-function toggle(what) {
-  if (what === 'dom') { domOn = !domOn; domLayer.hidden = !domOn; }
-  if (what === 'bloom') bloomOn = !bloomOn;
-  if (what === 'drift') driftOn = !driftOn;
-  const btn = document.querySelector(`#hud [data-toggle="${what}"]`);
-  if (btn) btn.classList.toggle('on', what === 'dom' ? domOn : what === 'bloom' ? bloomOn : driftOn);
-}
 
 addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -547,8 +505,7 @@ function tick() {
 
   const locked = framing === 'docked';
   const parallaxAmt = locked ? 0 : 0.055;
-  const drift = driftOn && !locked ? Math.sin(t * 0.22) * 0.05 : 0;
-  const targetYaw = look.yawTo + (pointer.dragging ? 0 : -pointer.x * parallaxAmt + drift);
+  const targetYaw = look.yawTo + (pointer.dragging ? 0 : -pointer.x * parallaxAmt);
   const targetPitch = look.pitchTo + (pointer.dragging ? 0 : pointer.y * parallaxAmt * 0.6);
 
   look.yaw += (targetYaw - look.yaw) * Math.min(1, dt * 4);
@@ -559,10 +516,7 @@ function tick() {
   }
 
   placeCamera();
-  updateDomRect();
-
-  if (bloomOn) composer.render();
-  else renderer.render(scene, camera);
+  composer.render();
 }
 
 tick();
@@ -738,6 +692,6 @@ window.GENO = {
     distance: rig.distance,
     inset: { ...SCREEN_INSET },
     glass: glass && { w: glass.width, h: glass.height },
-    domrect: projectQuad(glass ? glass.corners : [], window.innerWidth, window.innerHeight, false),
+    screenRect: projectQuad(glass ? glass.corners : [], window.innerWidth, window.innerHeight, false),
   }),
 };
