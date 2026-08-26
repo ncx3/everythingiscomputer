@@ -101,14 +101,37 @@ export const BRIEF = [
     'futurist promises.',
 ];
 
-/** Placeholders until the real material lands. */
-export const SURVEILLANCE = [{ label: 'PLAYTHROUGH', status: 'AWAITING UPLOAD' }];
+/**
+ * Cuts from the Gamescom build capture. `at` is the in-point in the master
+ * recording — kept so a clip can be re-cut without trawling the whole 18
+ * minutes again. Poster and clip paths follow from the id by convention.
+ */
+export const SURVEILLANCE = [
+  { id: 'orientation', code: 'SL-01', label: 'ORIENTATION', at: '0:34', dur: '0:51',
+    note: 'Do not fear the surveillance. Fear the gaps in it.' },
+  { id: 'highlighter', code: 'SL-02', label: 'HIGHLIGHTER', at: '4:02', dur: '0:31',
+    note: 'Genocyber Highlighter Component acquired.' },
+  { id: 'gatekeeper', code: 'SL-03', label: 'GATEKEEPER', at: '8:42', dur: '0:24',
+    note: 'Only agents with Gatekeeper digital ID may pass.' },
+  { id: 'dialectics', code: 'SL-04', label: 'DIALECTICS', at: '11:58', dur: '0:28',
+    note: 'Progress emerges from the synthesis of opposites.' },
+  { id: 'roboteism', code: 'SL-05', label: 'ROBOTEISM', at: '13:14', dur: '0:31',
+    note: 'Devotional hardware, stocked on a retail shelf.' },
+  { id: 'thestack', code: 'SL-06', label: 'THE STACK', at: '14:12', dur: '0:35',
+    note: 'The canon, filed by ideology.' },
+].map((c) => ({ ...c, poster: `/clips/${c.id}.webp`, src: `/clips/${c.id}.mp4` }));
 
 export const COMMS = [
-  { label: 'DISCORD', value: '████████████' },
-  { label: 'INSTAGRAM', value: '████████████' },
-  { label: 'PRESS', value: '████████████' },
-  { label: 'MAIL', value: '████████████' },
+  {
+    label: 'INSTAGRAM',
+    value: '@eeevvverythingggiscomputer',
+    href: 'https://www.instagram.com/eeevvverythingggiscomputer',
+  },
+  {
+    label: 'MAIL',
+    value: 'eeevvverythingggiscomputer@proton.me',
+    href: 'mailto:eeevvverythingggiscomputer@proton.me',
+  },
 ];
 
 export const SECTIONS = [

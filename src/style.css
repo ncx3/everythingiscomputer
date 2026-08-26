@@ -54,3 +54,134 @@ body.over-ui #stage { cursor: pointer; }
 #loading.done { opacity: 0; pointer-events: none; }
 #loading b { font-weight: 500; color: var(--phos-dim); letter-spacing: .18em; }
 
+
+
+/* ---- clip player ---- */
+/* Deliberately outside the CRT treatment: the footage gets no curvature, no
+   scanlines, no bloom. It sits above the glass as ordinary DOM. */
+#player {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: max(28px, 5vmin);
+}
+#player[hidden] { display: none; }
+
+#player-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 5, 4, .84);
+  opacity: 0;
+  transition: opacity .3s ease;
+}
+#player.on #player-scrim { opacity: 1; }
+
+#player-frame {
+  position: relative;
+  margin: 0;
+  width: min(1120px, 100%);
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
+}
+
+#player-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border: 1px solid var(--phos-dim);
+}
+
+#player-frame figcaption {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 12px;
+  font-size: 12px;
+  letter-spacing: .18em;
+  color: var(--phos-dim);
+}
+#player-frame figcaption b { font-weight: 500; color: var(--phos); }
+#player-note { letter-spacing: .05em; opacity: .75; }
+
+#player-close {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 12px;
+  padding: 5px 11px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: .2em;
+  color: var(--phos);
+  background: transparent;
+  border: 1px solid var(--phos-dim);
+  cursor: pointer;
+}
+#player-close:hover { background: rgba(92, 255, 174, .12); }
+
+@media (prefers-reduced-motion: reduce) {
+  #player-frame, #player-scrim { transition: none !important; }
+}
+
+/* The record runs out rather than just stopping: a terminal card over the
+   footage, in the same vocabulary as the TUI footer. */
+#player-end {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  padding: 16px;
+  text-align: center;
+  background: rgba(3, 8, 5, .93);
+  border: 1px solid var(--phos-dim);
+  animation: end-in .28s ease both;
+}
+#player-end[hidden] { display: none; }
+@keyframes end-in { from { opacity: 0 } to { opacity: 1 } }
+
+#player-end-title {
+  margin: 0;
+  font-size: clamp(13px, 1.6vw, 17px);
+  letter-spacing: .36em;
+  color: var(--phos);
+}
+#player-end-title::after {
+  content: '█';
+  margin-left: .35em;
+  animation: end-blink 1.1s step-end infinite;
+}
+@keyframes end-blink { 50% { opacity: 0 } }
+
+#player-end-meta {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: .2em;
+  color: var(--phos-dim);
+}
+
+#player-end-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 4px; }
+#player-end-actions button {
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: .18em;
+  color: var(--phos);
+  background: transparent;
+  border: 1px solid var(--phos-dim);
+  cursor: pointer;
+}
+#player-end-actions button:hover { background: rgba(92, 255, 174, .14); }
+
+@media (prefers-reduced-motion: reduce) {
+  #player-end { animation: none; }
+  #player-end-title::after { animation: none; }
+}

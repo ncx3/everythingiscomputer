@@ -19,6 +19,34 @@
 
     <div id="loading"><span>LOADING DECK</span><b id="pct">0%</b></div>
 
+    <!--
+      Clips play HERE, in plain DOM above the canvas — never through the CRT
+      pipeline. No curvature, no scanlines, no bloom on the footage itself.
+    -->
+    <div id="player" hidden>
+      <div id="player-scrim"></div>
+      <figure id="player-frame">
+        <video id="player-video" controls playsinline preload="metadata"></video>
+
+        <!-- Sits over the video once it runs out, in the deck's own vocabulary. -->
+        <div id="player-end" hidden>
+          <p id="player-end-title">── END OF RECORD ──</p>
+          <p id="player-end-meta"></p>
+          <div id="player-end-actions">
+            <button type="button" data-act="replay">↺ REPLAY</button>
+            <button type="button" data-act="next">NEXT ▸</button>
+            <button type="button" data-act="close">CLOSE ✕</button>
+          </div>
+        </div>
+        <figcaption>
+          <span id="player-code"></span>
+          <b id="player-label"></b>
+          <span id="player-note"></span>
+        </figcaption>
+        <button id="player-close" type="button" aria-label="Close clip">CLOSE ✕</button>
+      </figure>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

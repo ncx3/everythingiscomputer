@@ -19,6 +19,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createScreenMock } from './screen-mock.js';
+import { SURVEILLANCE } from './content.js';
 
 /**
  * The screen MESH runs underneath the bezel — its outer edge is never visible.
@@ -424,11 +425,123 @@ function pickScreen(clientX, clientY) {
   return hit?.uv ? screenMock.hitTest(hit.uv.x, hit.uv.y) : null;
 }
 
+// ── clip player ─────────────────────────────────────────────────────────
+// The one part of the site that is deliberately NOT on the glass. Clips play
+// in plain DOM above everything, so no curvature, scanline or bloom ever
+// touches the footage.
+const playerEl = document.getElementById('player');
+const playerFrame = document.getElementById('player-frame');
+const playerVideo = document.getElementById('player-video');
+const playerEnd = document.getElementById('player-end');
+let clipOpen = false;
+let currentClip = null;
+
+/** Where a thumbnail currently sits on screen, so the window grows out of it. */
+function thumbRect(id) {
+  const r = screenMock.regionRect(id);
+  if (!r || !glass) return null;
+  const q = projectQuad(glass.corners, window.innerWidth, window.innerHeight, false);
+  const a = screenMock.cellToUV(r.x, r.y);
+  const b = screenMock.cellToUV(r.x + r.w, r.y + r.h);
+  return {
+    x: q.minX + a.u * q.w,
+    y: q.minY + a.v * q.h,
+    w: (b.u - a.u) * q.w,
+    h: (b.v - a.v) * q.h,
+  };
+}
+
+function openClip(id) {
+  const c = SURVEILLANCE.find((x) => `clip:${x.id}` === id);
+  if (!c || clipOpen) return;
+  clipOpen = true;
+
+  playerEl.hidden = false;
+  loadClip(c);
+
+  // Start the frame sitting exactly on its thumbnail, then let it grow.
+  const from = thumbRect(id);
+  const to = playerFrame.getBoundingClientRect();
+  if (from && to.width) {
+    playerFrame.style.transition = 'none';
+    playerFrame.style.opacity = '0';
+    playerFrame.style.transform =
+      `translate(${from.x + from.w / 2 - (to.left + to.width / 2)}px, ` +
+      `${from.y + from.h / 2 - (to.top + to.height / 2)}px) scale(${from.w / to.width})`;
+    void playerFrame.offsetWidth; // commit the start state before transitioning
+  }
+  requestAnimationFrame(() => {
+    playerEl.classList.add('on');
+    playerFrame.style.transition = 'transform .42s cubic-bezier(.2,.85,.25,1), opacity .3s ease';
+    playerFrame.style.transform = '';
+    playerFrame.style.opacity = '1';
+  });
+
+  screenMock.setHover(null);
+  document.body.classList.remove('over-ui');
+}
+
+/** Swap in a record's footage and metadata. Used by both open and NEXT. */
+function loadClip(c) {
+  currentClip = c;
+  document.getElementById('player-code').textContent = c.code;
+  document.getElementById('player-label').textContent = c.label;
+  document.getElementById('player-note').textContent = c.note;
+  playerVideo.poster = c.poster;
+  playerVideo.src = c.src;
+  playerEnd.hidden = true;
+  playerVideo.play().catch(() => {}); // a blocked autoplay just leaves the controls
+}
+
+function closeClip() {
+  if (!clipOpen) return;
+  clipOpen = false;
+  playerVideo.pause();
+  playerEnd.hidden = true;
+  playerEl.classList.remove('on');
+  playerFrame.style.transition = 'transform .24s ease, opacity .2s ease';
+  playerFrame.style.opacity = '0';
+  playerFrame.style.transform = 'scale(.96)';
+  setTimeout(() => {
+    playerEl.hidden = true;
+    playerVideo.removeAttribute('src');
+    playerVideo.load(); // let go of the buffer
+  }, 240);
+}
+
+document.getElementById('player-close').addEventListener('click', closeClip);
+document.getElementById('player-scrim').addEventListener('click', closeClip);
+
+// The record runs out rather than just stopping — the log says so, and offers
+// the obvious next moves.
+playerVideo.addEventListener('ended', () => {
+  if (!currentClip) return;
+  document.getElementById('player-end-meta').textContent =
+    `${currentClip.code} / ${currentClip.label} · ${currentClip.dur} · CAPTURE @ ${currentClip.at}`;
+  playerEnd.hidden = false;
+});
+playerVideo.addEventListener('play', () => (playerEnd.hidden = true));
+
+playerEnd.addEventListener('click', (e) => {
+  const act = e.target.closest('button')?.dataset.act;
+  if (!act) return;
+  if (act === 'close') return closeClip();
+  if (act === 'replay') {
+    playerEnd.hidden = true;
+    playerVideo.currentTime = 0;
+    playerVideo.play().catch(() => {});
+    return;
+  }
+  const i = SURVEILLANCE.findIndex((x) => x.id === currentClip?.id);
+  loadClip(SURVEILLANCE[(i + 1) % SURVEILLANCE.length]);
+});
+
 // ── input ───────────────────────────────────────────────────────────────
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 addEventListener('pointerdown', (e) => {
+  if (clipOpen) return;
   pointer.dragging = true;
   pointer.lastX = pointer.downX = e.clientX;
   pointer.lastY = pointer.downY = e.clientY;
@@ -444,11 +557,14 @@ addEventListener('pointerup', (e) => {
     return;
   }
   const hit = pickScreen(e.clientX, e.clientY);
-  if (hit) screenMock.open(hit);
+  if (!hit) return;
+  if (hit.startsWith('clip:')) openClip(hit);
+  else screenMock.open(hit);
 });
 addEventListener('pointercancel', () => (pointer.dragging = false));
 
 addEventListener('pointermove', (e) => {
+  if (clipOpen) return;
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointer.y = (e.clientY / window.innerHeight) * 2 - 1;
 
@@ -471,6 +587,10 @@ addEventListener('wheel', (e) => {
 }, { passive: true });
 
 addEventListener('keydown', (e) => {
+  if (clipOpen) {
+    if (e.key === 'Escape') closeClip();
+    return;
+  }
   // The landing card says CLICK TO ENTER, but a keyboard user needs a way in.
   if (framing !== 'docked') {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFraming('docked'); }
@@ -695,8 +815,10 @@ window.GENO = {
     };
   },
 
-  /** GENO.open('brief') or GENO.open('ML-3032') */
-  open: (id) => screenMock.open(id),
+  /** GENO.open('brief'), GENO.open('ML-3032') or GENO.open('clip:orientation') */
+  open: (id) =>
+    typeof id === 'string' && id.startsWith('clip:') ? openClip(id) : screenMock.open(id),
+  closeClip,
 
   /** What is clickable at these viewport coords, if anything. */
   pick: (x, y) => pickScreen(x, y),

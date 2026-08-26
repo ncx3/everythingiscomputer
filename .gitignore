@@ -3,3 +3,7 @@ dist/
 *:Zone.Identifier
 .DS_Store
 sci_fi_tv_with_camera_alternative_90s.glb
+
+# raw capture masters — clips are built from these, never committed
+*.mp4
+!public/clips/*.mp4

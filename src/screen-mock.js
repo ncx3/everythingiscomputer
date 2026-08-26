@@ -52,6 +52,26 @@ const C = {
 
 const DIVIDER = 29; // column of the vertical pane divider
 
+/** Region id for a COMMS row, e.g. 'comms:instagram'. */
+const commsId = (c) => `comms:${c.label.toLowerCase()}`;
+
+/**
+ * Leave for an external COMMS address. Always reached from a real pointerup,
+ * so the popup blocker lets it through; mailto: stays in the tab.
+ */
+function follow(href) {
+  const a = document.createElement('a');
+  a.href = href;
+  if (!href.startsWith('mailto:')) {
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+  }
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 export function createScreenMock() {
   const canvas = document.createElement('canvas');
   canvas.width = W;
@@ -379,35 +399,117 @@ export function createScreenMock() {
     }
   }
 
+  // 17x5 cells is exactly 16:9 once the cell aspect is accounted for.
+  const THUMB_W = 17; // columns
+  const THUMB_H = 5; // rows
+  const THUMB_GAP = 3;
+  const THUMB_COLS = 3;
+
+  /** Region id for a clip thumbnail, e.g. 'clip:orientation'. */
+  const clipId = (c) => `clip:${c.id}`;
+
   function drawSurveillance() {
-    let y = 5;
-    for (const s of SURVEILLANCE) {
-      text(RX, y, `▸ ${s.label}`, C.amber);
-      text(RX + 24, y++, s.status, C.alert);
+    SURVEILLANCE.forEach((c, i) => {
+      const x = RX + (i % THUMB_COLS) * (THUMB_W + THUMB_GAP);
+      const y = 5 + Math.floor(i / THUMB_COLS) * (THUMB_H + 2);
+      const id = clipId(c);
+      const hot = hover === id;
+      // The label row is part of the target, so the caption is clickable too.
+      region(x, y, THUMB_W, THUMB_H + 1, id);
+      thumbs.push({ c, x, y, hot });
+      text(x, y + THUMB_H, c.code, hot ? C.amber : C.chrome);
+      text(x + 6, y + THUMB_H, c.label.slice(0, THUMB_W - 6), hot ? C.bright : C.dim);
+    });
+
+    // Whatever the cursor is over explains itself just above the footer.
+    const h = SURVEILLANCE.find((c) => clipId(c) === hover);
+    const y1 = ROWS - 7;
+    if (h) {
+      text(RX, y1, `${h.at} +${h.dur}`, C.amber);
+      text(RX + 12, y1, h.note.slice(0, RW - 12), C.text);
+    } else {
+      text(RX, y1, 'SELECT A RECORD TO PLAY', C.redact);
     }
-    y++;
-    text(RX, y, '┌' + '─'.repeat(RW - 2) + '┐', C.chrome);
-    for (let k = 0; k < 7; k++) text(RX, y + 1 + k, '│' + ' '.repeat(RW - 2) + '│', C.chrome);
-    text(RX, y + 8, '└' + '─'.repeat(RW - 2) + '┘', C.chrome);
-    text(RX + Math.floor((RW - 13) / 2), y + 4, '[ NO SIGNAL ]', C.redact);
+  }
+
+  /** A still off the monitor wall: same phosphor treatment as the portraits. */
+  function paintThumb(x, spec) {
+    const { c, hot } = spec;
+    const gx = spec.x * CELL_W;
+    const gy = spec.y * CELL_H;
+    const gw = THUMB_W * CELL_W;
+    const gh = THUMB_H * CELL_H;
+
+    const img = image(c.poster);
+    x.save();
+    x.beginPath();
+    x.rect(gx, gy, gw, gh);
+    x.clip();
+    if (img) {
+      x.filter = `grayscale(1) contrast(1.3) brightness(${hot ? 1.15 : 0.8})`;
+      const s = Math.max(gw / img.naturalWidth, gh / img.naturalHeight);
+      const w = img.naturalWidth * s;
+      const h = img.naturalHeight * s;
+      x.drawImage(img, gx + (gw - w) / 2, gy + (gh - h) / 2, w, h);
+      x.filter = 'none';
+      x.globalCompositeOperation = 'multiply';
+      x.fillStyle = C.text;
+      x.fillRect(gx, gy, gw, gh);
+      x.globalCompositeOperation = 'source-over';
+      x.fillStyle = 'rgba(0,0,0,.34)';
+      for (let k = 0; k < gh; k += 6) x.fillRect(gx, gy + k, gw, 3);
+    } else {
+      x.fillStyle = 'rgba(92,255,174,.05)';
+      x.fillRect(gx, gy, gw, gh);
+    }
+    x.restore();
+
+    x.strokeStyle = hot ? C.amber : C.chrome;
+    x.lineWidth = hot ? 3 : 2;
+    x.strokeRect(gx, gy, gw, gh);
+
+    const cx = gx + gw / 2;
+    const cy = gy + gh / 2;
+    const r = gh * 0.17;
+    x.strokeStyle = hot ? C.bright : C.dim;
+    x.lineWidth = 3;
+    x.beginPath();
+    x.arc(cx, cy, r, 0, Math.PI * 2);
+    x.stroke();
+    x.fillStyle = hot ? C.bright : C.dim;
+    x.beginPath();
+    x.moveTo(cx - r * 0.3, cy - r * 0.45);
+    x.lineTo(cx + r * 0.5, cy);
+    x.lineTo(cx - r * 0.3, cy + r * 0.45);
+    x.closePath();
+    x.fill();
+
+    x.textAlign = 'right';
+    x.fillStyle = hot ? C.amber : C.chrome;
+    x.fillText(c.dur, gx + gw - CELL_W * 0.4, gy + gh - CELL_H * 0.5);
+    x.textAlign = 'left';
   }
 
   function drawComms() {
     let y = 5;
     for (const c of COMMS) {
+      // A channel that is actually open gets a clickable row and live ink.
+      if (c.href) row(y, RX, RX + RW, commsId(c), false);
       text(RX, y, `▸ ${c.label}`, C.amber);
-      text(RX + 16, y, '.'.repeat(14), C.chrome);
-      text(RX + 32, y++, c.value, C.redact);
+      text(RX + 12, y, '.'.repeat(10), C.chrome);
+      text(RX + 24, y++, c.value, c.href ? C.bright : C.redact);
       y++;
     }
   }
 
   let portrait = null;
+  let thumbs = [];
 
   function composeOS(t) {
     clear();
     regions = [];
     portrait = null;
+    thumbs = [];
     frameChrome(true);
 
     const clock = new Date().toTimeString().slice(0, 8);
@@ -435,7 +537,14 @@ export function createScreenMock() {
     text(4, ROWS - 2, cmd, C.bright);
     if (Math.floor(t * 1.6) % 2 === 0) text(5 + cmd.length, ROWS - 2, '█', C.text);
 
-    paint(t, portrait ? (x) => paintPortrait(x, portrait) : undefined);
+    const overlay =
+      portrait || thumbs.length
+        ? (x) => {
+            if (portrait) paintPortrait(x, portrait);
+            for (const th of thumbs) paintThumb(x, th);
+          }
+        : undefined;
+    paint(t, overlay);
   }
 
   // ---- paint -----------------------------------------------------------
@@ -553,8 +662,13 @@ export function createScreenMock() {
     get section() {
       return section;
     },
-    /** Open a section, or select a personnel record by its code. */
+    /** Open a section, a personnel record by its code, or a COMMS link. */
     open(id) {
+      if (typeof id === 'string' && id.startsWith('comms:')) {
+        const c = COMMS.find((x) => commsId(x) === id);
+        if (c?.href) follow(c.href);
+        return { section, selected };
+      }
       const rec = PERSONNEL.find((p) => p.code === id);
       if (rec) {
         section = 'personnel';
@@ -577,6 +691,18 @@ export function createScreenMock() {
         if (gx >= r.x && gx < r.x + r.w && gy >= r.y && gy < r.y + r.h) return r.id;
       }
       return null;
+    },
+    /** Cell-space rect of a clickable region, for pinning DOM over it. */
+    regionRect(id) {
+      const r = regions.find((x) => x.id === id);
+      return r && { x: r.x, y: r.y, w: r.w, h: r.h };
+    },
+    /** Cell coords -> fraction across the glass, top-left origin. */
+    cellToUV(cx, cy) {
+      return {
+        u: marginX + (cx / COLS) * (1 - 2 * marginX),
+        v: marginY + (cy / ROWS) * (1 - 2 * marginY),
+      };
     },
     setHover(id) {
       if (id === hover) return false;
